@@ -32,6 +32,17 @@ final class LiveComponentSubscriberTest extends KernelTestCase
     use LiveComponentTestHelper;
     use ResetDatabase;
 
+    /**
+     * The deterministic id of the "component2" component in render_embedded_with_blocks.html.twig.
+     * If that template changes, this will need to be updated.
+     */
+    public const DETERMINISTIC_ID = 21098427781;
+    /**
+     * The deterministic id of the "component2" component in render_multiple_embedded_with_blocks.html.twig.
+     * If that template changes, this will need to be updated.
+     */
+    public const DETERMINISTIC_ID_MULTI_2 = 30904230242;
+
     public function testCanRenderComponentAsHtml(): void
     {
         $component = $this->mountComponent('component1', [
@@ -70,7 +81,15 @@ final class LiveComponentSubscriberTest extends KernelTestCase
 
     public function testCanExecuteComponentActionNormalRoute(): void
     {
-        $dehydrated = $this->dehydrateComponent($this->mountComponent('component2'));
+        $dehydrated = $this->dehydrateComponent(
+            $this->mountComponent(
+                'component2',
+                [
+                    'data-host-template' => 'render_embedded_with_blocks.html.twig',
+                    'data-embedded-template-index' => self::DETERMINISTIC_ID,
+                ]
+            )
+        );
         $token = null;
 
         $this->browser()
@@ -90,6 +109,7 @@ final class LiveComponentSubscriberTest extends KernelTestCase
             ->assertSuccessful()
             ->assertHeaderContains('Content-Type', 'html')
             ->assertContains('Count: 2')
+            ->assertSee('Embedded content with access to context, like count=2')
         ;
     }
 
@@ -201,6 +221,67 @@ final class LiveComponentSubscriberTest extends KernelTestCase
             ->get('/_components/component2?props='.urlencode(json_encode($dehydrated->getProps())))
             ->assertSuccessful()
             ->assertSee('PreReRenderCalled: Yes')
+        ;
+    }
+
+    public function testItAddsEmbeddedTemplateContextToEmbeddedComponents(): void
+    {
+        $dehydrated = $this->dehydrateComponent(
+            $this->mountComponent(
+                'component2',
+                [
+                    'data-host-template' => 'render_embedded_with_blocks.html.twig',
+                    'data-embedded-template-index' => self::DETERMINISTIC_ID,
+                ]
+            )
+        );
+
+        $this->browser()
+            ->visit('/render-template/render_embedded_with_blocks')
+            ->assertSuccessful()
+            ->assertSee('PreReRenderCalled: No')
+            ->assertSee('Embedded content with access to context, like count=1')
+            ->assertSeeElement('.component2')
+            ->assertElementAttributeContains('.component2', 'data-live-props-value', '"data-host-template":"render_embedded_with_blocks.html.twig"')
+            ->assertElementAttributeContains('.component2', 'data-live-props-value', '"data-embedded-template-index":'.self::DETERMINISTIC_ID)
+            ->get('/_components/component2?props='.urlencode(json_encode($dehydrated->getProps())))
+            ->assertSuccessful()
+            ->assertSee('PreReRenderCalled: Yes')
+            ->assertSee('Embedded content with access to context, like count=1')
+        ;
+    }
+
+    public function testItUseBlocksFromEmbeddedContextUsingMultipleComponents(): void
+    {
+        $dehydrated = $this->dehydrateComponent(
+            $this->mountComponent(
+                'component2',
+                [
+                    'data-host-template' => 'render_multiple_embedded_with_blocks.html.twig',
+                    'data-embedded-template-index' => self::DETERMINISTIC_ID_MULTI_2,
+                ]
+            )
+        );
+
+        $token = null;
+
+        $this->browser()
+            ->visit('/render-template/render_multiple_embedded_with_blocks')
+            ->assertSuccessful()
+            ->assertSeeIn('#component1', 'Overridden content from component 1')
+            ->assertSeeIn('#component2', 'Overridden content from component 2 on same line - count: 1')
+            ->assertSeeIn('#component3', 'PreReRenderCalled: No')
+            ->use(function (Crawler $crawler) use (&$token) {
+                // get a valid token to use for actions
+                $token = $crawler->filter('div')->eq(1)->attr('data-live-csrf-value');
+            })
+            ->post('/_components/component2/increase', [
+                'headers' => ['X-CSRF-TOKEN' => $token],
+                'body' => json_encode(['props' => $dehydrated->getProps()]),
+            ])
+            ->assertSuccessful()
+            ->assertHeaderContains('Content-Type', 'html')
+            ->assertSee('Overridden content from component 2 on same line - count: 2')
         ;
     }
 

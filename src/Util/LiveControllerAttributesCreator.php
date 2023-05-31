@@ -80,16 +80,23 @@ class LiveControllerAttributesCreator
 
         $mountedAttributes = $mounted->getAttributes();
 
-        if ($isChildComponent) {
-            if (!isset($mountedAttributes->all()['data-live-id'])) {
-                $id = $deterministicId ?: $this->idCalculator
-                    ->calculateDeterministicId(key: $mounted->getInputProps()[self::KEY_PROP_NAME] ?? null);
-                $attributesCollection->setLiveId($id);
-                // we need to add this to the mounted attributes so that it is
-                // will be included in the "attributes" part of the props data.
-                $mountedAttributes = $mountedAttributes->defaults(['data-live-id' => $id]);
-            }
+        if ($mounted->hasExtraMetadata('hostTemplate') && $mounted->hasExtraMetadata('embeddedTemplateIndex')) {
+            $mountedAttributes = $mountedAttributes->defaults([
+                'data-host-template' => $mounted->getExtraMetadata('hostTemplate'),
+                'data-embedded-template-index' => $mounted->getExtraMetadata('embeddedTemplateIndex'),
+            ]);
+        }
 
+        if (!isset($mountedAttributes->all()['data-live-id'])) {
+            $id = $deterministicId ?: $this->idCalculator
+                ->calculateDeterministicId(key: $mounted->getInputProps()[self::KEY_PROP_NAME] ?? null);
+            $attributesCollection->setLiveId($id);
+            // we need to add this to the mounted attributes so that it is
+            // will be included in the "attributes" part of the props data.
+            $mountedAttributes = $mountedAttributes->defaults(['data-live-id' => $id]);
+        }
+
+        if ($isChildComponent) {
             $fingerprint = $this->fingerprintCalculator->calculateFingerprint(
                 $mounted->getInputProps(),
                 $this->metadataFactory->getMetadata($mounted->getName())
